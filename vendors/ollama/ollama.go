@@ -3,6 +3,7 @@ package ollama
 import (
 	"context"
 	"fmt"
+    "strings"
 	"net/http"
 	"net/url"
 	"time"
@@ -62,16 +63,16 @@ func (o *Client) ListModels() (ret []string, err error) {
 }
 
 func (o *Client) SendStream(msgs []*common.Message, opts *common.ChatOptions, channel chan string) (err error) {
-	req := o.createChatRequest(msgs, opts)
+	req := o.createGenerateRequest(msgs, opts)
 
-	respFunc := func(resp ollamaapi.ChatResponse) (streamErr error) {
-		channel <- resp.Message.Content
+	respFunc := func(resp ollamaapi.GenerateResponse) (streamErr error) {
+		channel <- resp.Response
 		return
 	}
 
 	ctx := context.Background()
 
-	if err = o.client.Chat(ctx, &req, respFunc); err != nil {
+	if err = o.client.Generate(ctx, &req, respFunc); err != nil {
 		return
 	}
 
@@ -82,15 +83,15 @@ func (o *Client) SendStream(msgs []*common.Message, opts *common.ChatOptions, ch
 func (o *Client) Send(ctx context.Context, msgs []*common.Message, opts *common.ChatOptions) (ret string, err error) {
 	bf := false
 
-	req := o.createChatRequest(msgs, opts)
+	req := o.createGenerateRequest(msgs, opts)
 	req.Stream = &bf
 
-	respFunc := func(resp ollamaapi.ChatResponse) (streamErr error) {
-		ret = resp.Message.Content
+	respFunc := func(resp ollamaapi.GenerateResponse) (streamErr error) {
+		ret = resp.Response
 		return
 	}
 
-	if err = o.client.Chat(ctx, &req, respFunc); err != nil {
+	if err = o.client.Generate(ctx, &req, respFunc); err != nil {
 		fmt.Printf("FRED --> %s\n", err)
 	}
 	return
@@ -111,6 +112,29 @@ func (o *Client) createChatRequest(msgs []*common.Message, opts *common.ChatOpti
 	ret = ollamaapi.ChatRequest{
 		Model:    opts.Model,
 		Messages: messages,
+		Options:  options,
+	}
+	return
+}
+
+
+func (o *Client) createGenerateRequest(msgs []*common.Message, opts *common.ChatOptions) (ret ollamaapi.GenerateRequest) {
+	prompt := strings.Join(lo.Map(msgs, func(message *common.Message, _ int) (ret string) {
+		return message.Content
+	}), " ")
+
+	options := map[string]interface{}{
+		"temperature":       opts.Temperature,
+		"presence_penalty":  opts.PresencePenalty,
+		"frequency_penalty": opts.FrequencyPenalty,
+		"top_p":             opts.TopP,
+	}
+
+	ret = ollamaapi.GenerateRequest{
+		Model:    opts.Model,
+		Prompt: prompt,
+        System: "",
+        Template: "",
 		Options:  options,
 	}
 	return
